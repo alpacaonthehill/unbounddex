@@ -1,0 +1,44 @@
+html,
+body {
+	height: 100%;
+}
+* {
+	flex-shrink: 0;
+}
+stack {
+	display: flex;
+	flex-direction: column;
+}
+row {
+	display: flex;
+	flex-direction: row;
+}
+stack,
+row,
+div {
+	overflow: hidden;
+}
+h1 {
+	font-size: 1.875rem;
+	line-height: 2.5rem;
+	font-weight: 700;
+}
+h2 {
+	font-size: 1.5rem;
+	line-height: 2rem;
+	font-weight: 600;
+}
+p,
+a {
+	font-size: 1.125rem;
+	line-height: 1.75rem;
+	font-weight: 600;
+}
+h1,
+h2,
+p,
+a {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
