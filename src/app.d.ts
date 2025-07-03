@@ -7,6 +7,9 @@ declare global {
       cf: CfProperties;
       ctx: ExecutionContext;
     }
+    interface PageState {
+      query: string;
+    }
   }
   namespace svelteHTML {
     interface IntrinsicElements {
@@ -18,7 +21,7 @@ declare global {
   }
 }
 
-type CustomAttributes = "base";
+type CustomAttributes = "wrap";
 
 type UnocssAttributes =
   | "aspect"

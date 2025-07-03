@@ -7,10 +7,14 @@ import {
 } from "unocss";
 
 export default defineConfig({
-  shortcuts: { base: "text-base font-normal" },
+  rules: [["break-word", { "word-break": "break-word" }]],
+  shortcuts: {
+    wrap: "shrink whitespace-normal",
+    "wrap-break": "shrink whitespace-normal break-word",
+  },
   presets: [
     presetWind3(),
-    presetAttributify({ prefix: "u-" }),
+    presetAttributify(),
     presetTagify(),
     presetIcons({
       prefix: "icon",
