@@ -1,6 +1,6 @@
 # Unbound Dex
 
-Pokedex for Pokemon Unbound.
+Pokédex for Pokémon Unbound.
 
 ## Change log
 
