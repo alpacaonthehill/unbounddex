@@ -1,16 +1,23 @@
 <script lang="ts">
-  type Props = { evoType: number; evoLine: [string, string, string][] };
-  let { evoType, evoLine }: Props = $props();
+  type Props = {
+    current: string;
+    evoType: number;
+    evoLine: [string, string, string][];
+  };
+  let { current, evoType, evoLine }: Props = $props();
   import { goto } from "$app/navigation";
 
-  import { urlFromNameAndForm, spriteFromUrl } from "$lib";
+  import { cache } from "$lib/cache.svelte";
+  import { urlFromNameAndForm, spritePngHeader } from "$lib";
 </script>
 
 {#snippet EvoItem([name, form, method]: [string, string, string])}
   {@const url = urlFromNameAndForm(name, form)}
+  {@const disabled = current === url}
   <button
     flex="initial"
-    bg="hover:neutral-7 active:neutral-6"
+    {disabled}
+    class={disabled ? "" : "hover:bg-neutral-7 active:bg-neutral-6"}
     ontouchstart={() => {}}
     onclick={() => {
       goto(url);
@@ -18,7 +25,13 @@
   >
     <stack items="center">
       <div relative w="16" h="16">
-        <img src="/sprites/{spriteFromUrl(url)}.png" alt={name} class="placed" />
+        {#if url in cache.mons}
+          <img
+            src={`${spritePngHeader}${cache.mons[url][33]}`}
+            alt={name}
+            class="placed"
+          />
+        {/if}
       </div>
       <p wrap="break" align="center">{name}</p>
       {#if form}

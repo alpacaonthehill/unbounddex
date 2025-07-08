@@ -7,9 +7,6 @@ declare global {
       cf: CfProperties;
       ctx: ExecutionContext;
     }
-    interface PageState {
-      query: string;
-    }
   }
   namespace svelteHTML {
     interface IntrinsicElements {
