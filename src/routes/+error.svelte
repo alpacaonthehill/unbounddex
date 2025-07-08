@@ -21,7 +21,7 @@
   bg="hover:neutral-8 active:neutral-7"
   ontouchstart={() => {}}
   onclick={() => {
-    goto("/", { state: { query: "" } });
+    goto("/");
   }}
   aria-label="home"
 >

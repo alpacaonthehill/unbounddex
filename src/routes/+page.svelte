@@ -1,131 +1,100 @@
 <script lang="ts">
-  import type { PageProps } from "./$types";
-  import { page } from "$app/state";
-  import { goto, replaceState, preloadData } from "$app/navigation";
+  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
   import { scrollY } from "svelte/reactivity/window";
   import { MediaQuery } from "svelte/reactivity";
 
-  import { urlFromNameAndForm, iconFromUrl } from "$lib";
+  import { cache, updateCache } from "$lib/cache.svelte";
+  import {
+    urlFromNameAndForm,
+    compareArrays,
+    matchedIndices,
+    iconPngHeader,
+    typePngHeader,
+  } from "$lib";
 
-  let { data }: PageProps = $props();
-  let { mons, types } = data;
-  let headerImg: HTMLElement | null = $state(null);
   let searchBox: HTMLElement | null = $state(null);
-  let query = page.url.searchParams.get("query") ?? page.state.query ?? "";
-  let searchString = $state(query);
-  let headerFixed = $state(!!query);
+  let loadingURLs: string[] = $state([]);
+  let loadedURLs: string[] = $derived(Object.keys(cache.mons));
+  let searchString = $state(cache.query);
+  let headerFixed = $state(!!cache.query || !!cache.referrer);
 
-  function compareArrays(ary1: number[], ary2: number[]) {
-    let i = 0;
-    while (i < Math.min(ary1.length, ary2.length)) {
-      if (ary1[i] < ary2[i]) {
-        return -1;
-      } else if (ary1[i] > ary2[i]) {
-        return 1;
-      }
-      i += 1;
-    }
-    if (ary1.length > i) {
-      return 1;
-    } else if (ary2.length > i) {
-      return -1;
-    } else {
-      return 0;
-    }
-  }
+  onMount(() => {
+    updateCache(["extracts"]);
+    updateCache(["types"]);
+    updateCache(["abilities", "moves", "splits"]);
+  });
 
-  function matchedIndices(name: string, form: string, searchString: string) {
-    const nameWords = name.split(" ").filter((w) => w);
-    const formWords = form.split(" ").filter((w) => w);
-    const words = [...nameWords, ...formWords].map((w) => w.toLowerCase());
-    const searchWords = searchString
-      .split(" ")
-      .filter((w) => w)
-      .map((w) => w.toLowerCase());
-    let result: number[] = [];
-    let i = 0;
-    let j: number;
-    let incorrectPaths: number[][] = [];
-    while (i < searchWords.length) {
-      j = 0;
-      while (j < words.length) {
-        if (
-          words[j].startsWith(searchWords[i]) &&
-          !result.includes(j) &&
-          !incorrectPaths.filter((path) => !compareArrays(path, [...result, j])).length
-        ) {
-          result.push(j);
-          i += 1;
-          break;
-        }
-        j += 1;
-      }
-      if (j === words.length) {
-        if (i === 0) {
-          return [];
-        } else {
-          incorrectPaths.push(result.slice());
-          result.pop();
-          i -= 1;
-        }
-      }
-    }
-    return result.map((idx) =>
-      idx >= nameWords.length ? idx - nameWords.length + 10 : idx
-    );
-  }
+  let extracts = $derived(cache.extracts ?? []);
+  let searchedItems = $derived(
+    extracts
+      .map((extract) => ({
+        extract,
+        indices: matchedIndices(extract[0], extract[1], searchString),
+      }))
+      .filter(({ indices }) => indices.length)
+      .sort(
+        (l, r) =>
+          compareArrays(l.indices, r.indices) ||
+          l.extract[0].localeCompare(r.extract[0], "en", { sensitivity: "base" }) ||
+          l.extract[1].localeCompare(r.extract[1], "en", { sensitivity: "base" })
+      )
+  );
 
   const mdScreen = new MediaQuery("min-width: 396px");
   const lgScreen = new MediaQuery("min-width: 440px");
   let rootFontSize = $derived(lgScreen.current ? 20 : mdScreen.current ? 18 : 16);
+
+  let highWatermark = $state(0);
   let scrollCount = $derived(
     Math.floor((scrollY.current ?? 0) / 3.283333 / rootFontSize)
   );
-  let searchedMons = $derived(
-    mons
-      .map(
-        (mon) =>
-          [...mon, matchedIndices(mon[0], mon[1], searchString)] as [
-            string,
-            string,
-            number,
-            number,
-            number[],
-          ]
-      )
-      .filter((mon) => mon[4].length)
-      .sort(
-        (mon1, mon2) =>
-          compareArrays(mon1[4], mon2[4]) ||
-          mon1[0].localeCompare(mon2[0], "en", { sensitivity: "base" }) ||
-          mon1[1].localeCompare(mon2[1], "en", { sensitivity: "base" })
-      )
-  );
   let itemCount = $derived(
-    Math.min(30 + Math.floor(scrollCount / 10) * 10, searchedMons.length)
+    Math.min(30 + Math.floor(scrollCount / 10) * 10, searchedItems.length)
   );
-  let highWatermark = $state(0);
-  let showingMons = $derived(searchedMons.slice(0, Math.max(itemCount, highWatermark)));
-  let exactMatch = $derived(
-    itemCount === 1 ||
-      (searchedMons.length > 0 &&
-        !searchedMons[0][1] &&
-        (!searchString.localeCompare(searchedMons[0][0], "en", { sensitivity: "base" }) ||
-          searchedMons.every(
-            ([name]) =>
-              name.endsWith(searchedMons[0][0]) ||
-              name.endsWith(searchedMons[0][0] + " X") ||
-              name.endsWith(searchedMons[0][0] + " Y")
-          )))
-  );
-  let topSearchUrl = $derived(
-    searchedMons.length ? urlFromNameAndForm(searchedMons[0][0], searchedMons[0][1]) : ""
-  );
+  let showingItems = $derived(searchedItems.slice(0, Math.max(itemCount, highWatermark)));
+
   $effect(() => {
     if (itemCount > highWatermark) {
+      const requiredURLs = searchedItems
+        .slice(highWatermark, itemCount)
+        .map(({ extract: [name, form] }) => urlFromNameAndForm(name, form))
+        .filter((url) => !loadingURLs.includes(url) && !loadedURLs.includes(url));
+      if (requiredURLs.length) {
+        loadingURLs = [...loadingURLs, ...requiredURLs];
+        fetch(`/api?mons=${requiredURLs.join()}`).then((response) =>
+          response.json().then((json) => {
+            cache.mons = {
+              ...cache.mons,
+              ...json,
+            };
+            loadingURLs = loadingURLs.filter((url) => !requiredURLs.includes(url));
+          })
+        );
+      }
       highWatermark = itemCount;
     }
   });
+
+  let exactMatch = $derived(
+    itemCount === 1 ||
+      (searchedItems.length > 0 &&
+        !searchedItems[0].extract[1] &&
+        (!searchString.localeCompare(searchedItems[0].extract[0], "en", {
+          sensitivity: "base",
+        }) ||
+          searchedItems.every(
+            ({ extract: [name] }) =>
+              name.endsWith(searchedItems[0].extract[0]) ||
+              name.endsWith(searchedItems[0].extract[0] + " X") ||
+              name.endsWith(searchedItems[0].extract[0] + " Y")
+          )))
+  );
+  let topSearchUrl = $derived(
+    searchedItems.length
+      ? urlFromNameAndForm(searchedItems[0].extract[0], searchedItems[0].extract[1])
+      : ""
+  );
 </script>
 
 <svelte:head>
@@ -134,7 +103,7 @@
 
 {#if !headerFixed}
   <div class="header-pic" relative w="full" h="0" p="t-120/600">
-    <img src="/logo.png" bind:this={headerImg} alt="Unbound Dex" class="placed" />
+    <img src="/logo.png" alt="Unbound Dex" class="placed" />
   </div>
 
   <h2 class="header-caption" c="neutral-4" align="center">
@@ -149,17 +118,28 @@
 >
   <row p="x-2" rounded="md" bg="white" c="neutral-8" items="center">
     {#if headerFixed}
-      <a
-        href="/"
-        m="t-1.6"
-        onclick={() => {
-          searchString = "";
-          headerFixed = false;
-        }}
-        aria-label="back"
-      >
-        <icon:arrow-left></icon:arrow-left>
-      </a>
+      {#if cache.referrer}
+        <button
+          m="t-1.6"
+          onclick={() => {
+            goto(`/p/${cache.referrer}`);
+          }}
+          aria-label="back"
+        >
+          <icon:chevron-left></icon:chevron-left>
+        </button>
+      {:else}
+        <button
+          m="t-1.6"
+          onclick={() => {
+            searchString = "";
+            headerFixed = false;
+          }}
+          aria-label="back"
+        >
+          <icon:arrow-left></icon:arrow-left>
+        </button>
+      {/if}
     {:else}
       <icon:magnifying-glass></icon:magnifying-glass>
     {/if}
@@ -177,30 +157,30 @@
       oninput={() => {
         scrollTo({ top: 0, behavior: "instant" });
         highWatermark = 0;
-        if (exactMatch) {
-          preloadData(`/p/${topSearchUrl}`);
-        }
+        cache.referrer = "";
       }}
       onfocus={() => {
         headerFixed = true;
       }}
       onkeydown={(event) => {
         if (event.key === "Enter" && exactMatch) {
-          replaceState(`/?query=${searchString}`, { query: searchString });
-          goto(`/p/${topSearchUrl}`, {
-            state: { query: searchString },
-          });
+          cache.query = searchString;
+          goto(`/p/${topSearchUrl}`);
         }
       }}
     />
     {#if exactMatch}
-      <p text="xs" b="1 neutral-5" m="r-4" p="x-1" rounded="md" c="neutral-5">enter</p>
+      <div m="t-1.6 r-6">
+        <icon:arrow-turn-down-left w="4.5" h="4.5" c="[rgb(64,64,51)]"
+        ></icon:arrow-turn-down-left>
+      </div>
     {/if}
-    {#if searchString !== ""}
+    {#if searchString}
       <button
         m="t-1.6"
-        onclick={() => {
+        onclick={(event) => {
           searchString = "";
+          cache.referrer = "";
           searchBox?.focus();
         }}
         aria-label="clear"
@@ -212,14 +192,11 @@
 </div>
 
 <stack p="l-2.5 r-3" class={headerFixed ? "m-t-14" : ""}>
-  {#if !showingMons.length && searchString}
+  {#if !showingItems.length && searchString}
     <h3 p="2" c="neutral-4" align="center">No results</h3>
   {:else}
-    {#each showingMons as [monName, monForm, type1idx, type2idx, indices], idx}
+    {#each showingItems as { extract: [monName, monForm, type1idx, type2idx], indices }, idx}
       {@const monURL = urlFromNameAndForm(monName, monForm)}
-      {@const iconURL = iconFromUrl(monURL)}
-      {@const type1 = types[type1idx]}
-      {@const type2 = types[type2idx]}
       {@const highlights: [number, number, "name" | "form"][] = indices.map((index, i) =>
         index < 10
           ? [index, searchString.split(" ")[i].length, "name"]
@@ -231,8 +208,8 @@
         class="text-left"
         ontouchstart={() => {}}
         onclick={() => {
-          replaceState(`/?query=${searchString}`, { query: searchString });
-          goto(`/p/${monURL}`, { state: { query: searchString } });
+          cache.query = searchString;
+          goto(`/p/${monURL}`);
         }}
       >
         <row
@@ -244,7 +221,13 @@
           overflow="visible"
         >
           <div relative w="8" h="8" class="-m-x-0.5" m="r-1 b-1.5">
-            <img src="/icons/{iconURL}.png" alt={monURL} class="placed" />
+            {#if loadedURLs.includes(monURL)}
+              <img
+                src={`${iconPngHeader}${cache.mons[monURL][32]}`}
+                alt={monURL}
+                class="placed"
+              />
+            {/if}
           </div>
           <stack w="46">
             {@render Highlighted(monName, highlights, "name", !monForm)}
@@ -254,15 +237,23 @@
           </stack>
           <row gap="1.5">
             <div relative w="12.5" h="4.166667">
-              <img src="/types/{type1}.png" alt={type1} class="placed" />
+              {#if cache.types}
+                <img
+                  src={`${typePngHeader}${cache.types[type1idx][1]}`}
+                  alt={cache.types[type1idx][0]}
+                  class="placed"
+                />
+              {/if}
             </div>
-            {#if type2}
-              <div relative w="12.5" h="4.166667">
-                <img src="/types/{type2}.png" alt={type2} class="placed" />
-              </div>
-            {:else}
-              <div w="12.5"></div>
-            {/if}
+            <div relative w="12.5" h="4.166667">
+              {#if type2idx !== -1 && cache.types}
+                <img
+                  src={`${typePngHeader}${cache.types[type2idx][1]}`}
+                  alt={cache.types[type2idx][0]}
+                  class="placed"
+                />
+              {/if}
+            </div>
           </row>
         </row>
       </button>
